@@ -143,3 +143,49 @@ identifier `com.crosspointreader.sync.share`.
 
 See [mobile import checks](../docs/mobile-file-imports-testing.md) for native
 build and device verification.
+
+### Adobe `.acsm` loans (Protected Content)
+
+An `.acsm` is a small Adobe fulfillment token from Libby/OverDrive or a store, not
+the book itself. On CrossPoint firmware 2.0.0 or later with the **Protected
+Content** SD plugin, sending an `.acsm` makes the reader fetch the book:
+
+1. Turn on **Settings → Connectivity → Plugins** on the reader and install
+   Protected Content (**Send → Plugins**).
+2. Sign in once from the Protected Content card on the reader's web page.
+3. Send the `.acsm` from **Send → Books**. The app uploads it (step 1 of 2), then
+   queues the plugin's `fulfill {path}` job and runs the reader's plugin host
+   while it works (step 2 of 2). The reader saves the
+   encrypted EPUB next to the `.acsm` and deletes the `.acsm`. The fetch reports no
+   byte counts, so the row shows elapsed time instead. **Details** lists each step.
+
+```mermaid
+sequenceDiagram
+    participant App as CrossPoint Sync
+    participant Host as Plugin host<br/>(sandboxed frame in the app)
+    participant Reader as Reader
+    App->>Reader: Upload Loan.acsm
+    App->>Reader: Queue fulfill job
+    App->>Host: Start plugin host
+    Host->>App: Plugin requests
+    App->>Reader: Forward through Rust HTTP
+    Note over Reader: Fetches the book,<br/>deletes the .acsm
+    App->>Reader: Poll job status
+    Reader-->>App: Done: title
+    App->>Host: Stop plugin host
+```
+
+Keep the app open until the book arrives. If the fetch fails, the `.acsm` stays
+queued. Sending it again fetches the copy already on the reader. On older
+firmware, or without the plugin, the `.acsm` is saved to the card and the app
+explains what is missing. Nothing here removes DRM: the book stays encrypted on
+the card, and loans still expire.
+
+The app runs the reader's plugin host itself rather than opening its `http://`
+`/plugins-run` page: the firmware's own `/js/plugin-host.js` and SD plugins run in
+a sandboxed frame with an opaque origin and no access to the app or Tauri. The
+frame's `fetch` and plugin script loads are relayed to the app, which sends them
+to the reader through its Rust HTTP client, as it does for every other reader
+request. Plugins can reach only their reader. See `src/pluginRunner.js`,
+`src/protectedContent.js` and the firmware's `docs/sd-plugins.md` ("Surface 2:
+the plugin job queue").
