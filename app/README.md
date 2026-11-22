@@ -159,6 +159,22 @@ Content** SD plugin, sending an `.acsm` makes the reader fetch the book:
    encrypted EPUB next to the `.acsm` and deletes the `.acsm`. The fetch reports no
    byte counts, so the row shows elapsed time instead. **Details** lists each step.
 
+```mermaid
+sequenceDiagram
+    participant App as CrossPoint Sync
+    participant Host as Plugin host<br/>(sandboxed frame in the app)
+    participant Reader as Reader
+    App->>Reader: Upload Loan.acsm
+    App->>Reader: Queue fulfill job
+    App->>Host: Start plugin host
+    Host->>App: Plugin requests
+    App->>Reader: Forward through Rust HTTP
+    Note over Reader: Fetches the book,<br/>deletes the .acsm
+    App->>Reader: Poll job status
+    Reader-->>App: Done: title
+    App->>Host: Stop plugin host
+```
+
 Keep the app open until the book arrives. If the fetch fails, the `.acsm` stays
 queued. Sending it again fetches the copy already on the reader. On older
 firmware, or without the plugin, the `.acsm` is saved to the card and the app
