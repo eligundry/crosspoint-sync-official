@@ -6,7 +6,6 @@ mod coordinated_import;
 mod epub_name;
 mod mdns;
 mod opds;
-mod plugin_runner;
 mod refresh;
 #[cfg(any(target_os = "ios", test))]
 mod shortcuts_cache;
@@ -59,8 +58,6 @@ pub fn run() {
       supports_native_chrome,
       set_page_scroll,
       refresh::end_refresh,
-      plugin_runner::open_plugin_runner,
-      plugin_runner::close_plugin_runner,
     ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")

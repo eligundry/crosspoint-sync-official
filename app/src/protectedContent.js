@@ -11,13 +11,12 @@ import { acquireRunner, releaseRunner } from './pluginRunner.js'
 // returns {title, dest, bytes}. Nothing here removes DRM: the book stays encrypted
 // on the card and loans still expire.
 //
-// Jobs run only while a page hosting the plugin is open, so the reader's headless
-// /plugins-run page is kept open (pluginRunner.js) while the job is outstanding.
+// Jobs run only while a page hosting the plugin is open, so the app runs the
+// reader's plugin host itself (pluginRunner.js) while the job is outstanding.
 // See the firmware's docs/sd-plugins.md, "Surface 2: the plugin job queue".
 
 export const PLUGIN = 'protected-content'
 export const ACTION = 'fulfill'
-export const RUNNER_PATH = '/plugins-run'
 // The firmware rejects job args of 192+ bytes of JSON.
 const ARGS_MAX_BYTES = 191
 const POLL_MS = 2000
@@ -153,7 +152,7 @@ export async function fulfillAcsm({ base, version, path, onPhase = () => {}, onL
   onLog(`Queued ${PLUGIN}/${ACTION} job ${id} for ${path}`)
   onPhase('waiting')
 
-  await acquireRunner(`${base}${RUNNER_PATH}`)
+  acquireRunner(base)
   let mayBeRunning = true
   try {
     let started = false

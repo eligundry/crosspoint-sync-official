@@ -35,10 +35,8 @@ tauri-plugin-system-components = { git = "https://github.com/itsthisjustin/tauri
 [target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
 block2 = "0.6"
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSData", "NSFileManager", "NSString", "NSURL", "NSURLRequest", "NSFileCoordinator", "NSError", "block2"] }
+objc2-foundation = { version = "0.3", features = ["NSData", "NSFileManager", "NSString", "NSURL", "NSFileCoordinator", "NSError", "block2"] }
 [target.'cfg(target_os = "ios")'.dependencies]
-# CGRect for the hidden plugin-runner WKWebView.
-objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "objc2", "CFCGTypes"] }
 objc2-ui-kit = { version = "0.3", default-features = false, features = ["std", "UIControl", "UIImage", "UIImagePickerController", "UIRefreshControl", "UIResponder", "UIView"] }
 
 [dev-dependencies]

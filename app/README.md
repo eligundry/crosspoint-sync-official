@@ -154,8 +154,8 @@ Content** SD plugin, sending an `.acsm` makes the reader fetch the book:
    Protected Content (**Send → Plugins**).
 2. Sign in once from the Protected Content card on the reader's web page.
 3. Send the `.acsm` from **Send → Books**. The app uploads it (step 1 of 2), then
-   queues the plugin's `fulfill {path}` job and keeps the reader's headless
-   `/plugins-run` page open while it runs (step 2 of 2). The reader saves the
+   queues the plugin's `fulfill {path}` job and runs the reader's plugin host
+   while it works (step 2 of 2). The reader saves the
    encrypted EPUB next to the `.acsm` and deletes the `.acsm`. The fetch reports no
    byte counts, so the row shows elapsed time instead. **Details** lists each step.
 
@@ -165,9 +165,11 @@ firmware, or without the plugin, the `.acsm` is saved to the card and the app
 explains what is missing. Nothing here removes DRM: the book stays encrypted on
 the card, and loans still expire.
 
-Desktop and iOS host `/plugins-run` in a hidden native webview
-(`src-tauri/src/plugin_runner.rs`), because an `http://` frame inside the app's
-`tauri://` page can be blocked as mixed content. Android uses a hidden iframe,
-which needs cleartext WebView traffic (`usesCleartextTraffic`). The runner window
-has no Tauri capabilities. See `src/protectedContent.js` and the firmware's
-`docs/sd-plugins.md` ("Surface 2: the plugin job queue").
+The app runs the reader's plugin host itself rather than opening its `http://`
+`/plugins-run` page: the firmware's own `/js/plugin-host.js` and SD plugins run in
+a sandboxed frame with an opaque origin and no access to the app or Tauri. The
+frame's `fetch` and plugin script loads are relayed to the app, which sends them
+to the reader through its Rust HTTP client, as it does for every other reader
+request. Plugins can reach only their reader. See `src/pluginRunner.js`,
+`src/protectedContent.js` and the firmware's `docs/sd-plugins.md` ("Surface 2:
+the plugin job queue").

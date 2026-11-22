@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 
-const runner = vi.hoisted(() => ({ acquire: vi.fn(async () => {}), release: vi.fn() }))
+const runner = vi.hoisted(() => ({ acquire: vi.fn(), release: vi.fn() }))
 vi.mock('./api.js', () => ({ http: vi.fn() }))
 vi.mock('./pluginRunner.js', () => ({ acquireRunner: runner.acquire, releaseRunner: runner.release }))
 
@@ -64,7 +64,7 @@ it('queues the fulfill job, keeps the runner open while it runs and returns the 
   expect(phases).toEqual(['waiting', 'fetching'])
   const submit = calls.find((c) => c.method === 'POST')
   expect(JSON.parse(submit.body)).toEqual({ plugin: 'protected-content', action: 'fulfill', args: { path: '/Books/Loan.acsm' } })
-  expect(runner.acquire).toHaveBeenCalledWith('http://reader/plugins-run')
+  expect(runner.acquire).toHaveBeenCalledWith('http://reader')
   expect(runner.release).toHaveBeenCalledTimes(1)
 })
 
