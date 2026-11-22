@@ -17,7 +17,9 @@ android {
     compileSdk = 36
     namespace = "com.crosspointreader.sync"
     defaultConfig {
-        manifestPlaceholders["usesCleartextTraffic"] = "false"
+        // The hidden plugin-runner iframe loads the reader's http:// /plugins-run page
+        // in the WebView (src/pluginRunner.js). Other reader traffic goes through Rust.
+        manifestPlaceholders["usesCleartextTraffic"] = "true"
         applicationId = "com.crosspointreader.sync"
         minSdk = 24
         targetSdk = 36

@@ -143,3 +143,31 @@ identifier `com.crosspointreader.sync.share`.
 
 See [mobile import checks](../docs/mobile-file-imports-testing.md) for native
 build and device verification.
+
+### Adobe `.acsm` loans (Protected Content)
+
+An `.acsm` is a small Adobe fulfillment token from Libby/OverDrive or a store, not
+the book itself. On CrossPoint firmware 2.0.0 or later with the **Protected
+Content** SD plugin, sending an `.acsm` makes the reader fetch the book:
+
+1. Turn on **Settings → Connectivity → Plugins** on the reader and install
+   Protected Content (**Send → Plugins**).
+2. Sign in once from the Protected Content card on the reader's web page.
+3. Send the `.acsm` from **Send → Books**. The app uploads it (step 1 of 2), then
+   queues the plugin's `fulfill {path}` job and keeps the reader's headless
+   `/plugins-run` page open while it runs (step 2 of 2). The reader saves the
+   encrypted EPUB next to the `.acsm` and deletes the `.acsm`. The fetch reports no
+   byte counts, so the row shows elapsed time instead. **Details** lists each step.
+
+Keep the app open until the book arrives. If the fetch fails, the `.acsm` stays
+queued. Sending it again fetches the copy already on the reader. On older
+firmware, or without the plugin, the `.acsm` is saved to the card and the app
+explains what is missing. Nothing here removes DRM: the book stays encrypted on
+the card, and loans still expire.
+
+Desktop and iOS host `/plugins-run` in a hidden native webview
+(`src-tauri/src/plugin_runner.rs`), because an `http://` frame inside the app's
+`tauri://` page can be blocked as mixed content. Android uses a hidden iframe,
+which needs cleartext WebView traffic (`usesCleartextTraffic`). The runner window
+has no Tauri capabilities. See `src/protectedContent.js` and the firmware's
+`docs/sd-plugins.md` ("Surface 2: the plugin job queue").

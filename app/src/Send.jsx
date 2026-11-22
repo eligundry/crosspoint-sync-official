@@ -24,6 +24,7 @@ import Plugins from './Plugins.jsx'
 import ReaderFonts from './ReaderFonts.jsx'
 import Wallpaper from './Wallpaper.jsx'
 import { transferProgress } from './epub/log.js'
+import { fulfillAcsm, isAcsm } from './protectedContent.js'
 
 const size = (n) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`)
 // Shared progress from the WebView optimizer and native transfers.
@@ -32,7 +33,20 @@ export function progressLabel(p) {
   if (p.stage === 'downloading') return p.total ? `Downloading ${Math.round((p.done / p.total) * 100)}%` : `Downloading ${size(p.done)}`
   if (p.stage === 'repairing') return 'Fixing cover and details…'
   if (p.stage === 'optimizing') return p.total ? `Optimizing EPUB ${Math.round(p.done / p.total * 100)}%` : 'Optimizing EPUB…'
+  if (p.stage === 'fulfilling') return p.phase === 'fetching' ? 'Step 2 of 2 · Reader is fetching the book…' : 'Step 2 of 2 · Waiting for the reader…'
   return 'Sending to reader…'
+}
+
+const clock = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`
+
+// Protected Content reports no byte counts, so the fetch shows how long it has run.
+function Elapsed({ since }) {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  return <> · {clock(Math.max(0, now - since))}</>
 }
 
 const settingRow = 'flex min-h-12 items-center gap-3 py-2'
@@ -169,8 +183,16 @@ function Device({ prefs, setPrefs, device, onRetry, books }) {
   )
 }
 
-function Status({ state, error, progress, sentAs }) {
-  if (state === 'sending') return <span className="text-stone-500">{progressLabel(progress)}</span>
+function Status({ state, error, progress, sentAs, fetched, saved }) {
+  if (state === 'sending')
+    return (
+      <span className="text-stone-500">
+        {progressLabel(progress)}
+        {progress?.since && <Elapsed since={progress.since} />}
+      </span>
+    )
+  if (state === 'done' && fetched) return <span className="text-brand-600">Fetched {fetched}</span>
+  if (state === 'done' && saved) return <span className="text-amber-700">Saved the .acsm · see Details</span>
   if (state === 'done') return <span className="text-brand-600">{sentAs ? `Sent as ${sentAs}` : 'Sent'}</span>
   if (state === 'error') return <span className="text-red-600">{error}</span>
   return null
@@ -517,6 +539,27 @@ export default function Send({ tab = '' }) {
     }
   }
 
+  // Hands an uploaded .acsm to the reader's Protected Content plugin.
+  async function fetchProtected(path, progress) {
+    const start = Date.now()
+    const log = (message, tag = 'ACSM') => progress({ log: { elapsed: (Date.now() - start) / 1000, tag, message } })
+    progress({ stage: 'fulfilling', phase: 'waiting', since: start })
+    try {
+      const outcome = await fulfillAcsm({
+        base: device.base,
+        version: device.status?.version,
+        path,
+        onLog: log,
+        onPhase: (phase) => progress({ stage: 'fulfilling', phase, since: start }),
+      })
+      if (outcome.skipped) log(outcome.skipped)
+      return outcome
+    } catch (e) {
+      log(e.message, 'ERROR')
+      throw new Error(`Sent the .acsm, but the reader couldn't fetch the book: ${e.message}`)
+    }
+  }
+
   async function sendAll() {
     const batch = files.filter(item => item.state !== 'done' && !activeImports.has(item.id))
     if (!batch.length) return
@@ -526,14 +569,31 @@ export default function Send({ tab = '' }) {
     const failed = []
     for (const item of batch) {
       const update = (patch) => setFiles((cur) => cur.map((f) => (f.file === item.file ? { ...f, ...patch } : f)))
-      update({ state: 'sending', error: null, progress: null, logs: [] })
+      update({ state: 'sending', error: null, progress: null, logs: [], fetched: null, saved: null })
+      const progress = (event) => setFiles((cur) => cur.map((f) => f.file === item.file ? transferProgress(f, event) : f))
       try {
         const file = await readImport({ ...item.file, id: item.id })
-        const used = await sendFile(file, prefs, (event) => setFiles((cur) => cur.map((f) => f.file === item.file ? transferProgress(f, event) : f)))
+        // The queued .acsm stays until the reader has the book, so a failed fetch can
+        // be sent again. The plugin deletes the reader's copy only once it succeeds,
+        // so a resend that finds it there fetches that copy.
+        const used = await sendFile(file, prefs, progress).catch((e) => {
+          if (!isAcsm(file.name) || !/already on your reader/i.test(String(e))) throw e
+          progress({ log: { elapsed: 0, tag: 'ACSM', message: `${file.name} is already on the reader; fetching that copy` } })
+          return file.name.normalize('NFC')
+        })
+        const outcome = isAcsm(used) ? await fetchProtected(joinPath(prefs.folder, used), progress) : null
         await removeImport(item.id)
         queueRevision.current += 1
-        update({ state: 'done', sentAs: used !== item.file.name ? used : null })
-        sent.push(used)
+        if (outcome?.skipped) {
+          update({ state: 'done', saved: true })
+          notify({ title: `Saved ${used} to your reader`, detail: outcome.skipped })
+        } else if (outcome) {
+          update({ state: 'done', fetched: outcome.title ?? used })
+          sent.push(outcome.title ?? used)
+        } else {
+          update({ state: 'done', sentAs: used !== item.file.name ? used : null })
+          sent.push(used)
+        }
       } catch (e) {
         update({ state: 'error', error: String(e) })
         failed.push(String(e))
@@ -623,7 +683,7 @@ export default function Send({ tab = '' }) {
 
                   {files.length > 0 && (
                     <div className="mt-2 divide-y divide-stone-200">
-                      {files.map(({ id, file, state, error, sentAs, progress, logs }) => (
+                      {files.map(({ id, file, state, error, sentAs, fetched, saved, progress, logs }) => (
                         <div key={id} className="py-3">
                           <ConversionLog entries={logs}>
                             {(details) => (
@@ -633,7 +693,7 @@ export default function Send({ tab = '' }) {
                                   <p className="truncate text-sm font-medium text-stone-900">{file.name}</p>
                                   <p className="flex min-w-0 items-center text-xs text-stone-500">
                                     <span className="truncate">
-                                      {state === 'queued' ? size(file.size) : <Status state={state} error={error} sentAs={sentAs} progress={progress} />}
+                                      {state === 'queued' ? size(file.size) : <Status state={state} error={error} sentAs={sentAs} fetched={fetched} saved={saved} progress={progress} />}
                                     </span>
                                     {details}
                                   </p>
